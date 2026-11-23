@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import { ParticleAudioEngine, type AudioStatusSnapshot } from './audio/audioEngine';
 import { ControlDock } from './components/ControlDock';
 import { TopBar } from './components/TopBar';
+import {
+  buildRecordingFilename,
+  CanvasVideoRecorder,
+} from './recording/videoRecorder';
 import { ParticleCanvas, type ParticleCanvasHandle } from './scene/ParticleCanvas';
 import { getPaletteById } from './simulation/palettes';
 import {
@@ -21,11 +25,24 @@ export default function App() {
   const [musicOpen, setMusicOpen] = useState(false);
   const [pulseCount, setPulseCount] = useState(0);
   const [snapshotSaved, setSnapshotSaved] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDurationMs, setRecordingDurationMs] = useState(0);
+  const [videoSaved, setVideoSaved] = useState(false);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+  const [lastRecordingMeta, setLastRecordingMeta] = useState<{
+    bytes: number;
+    hasAudio: boolean;
+  }>({ bytes: 0, hasAudio: false });
   const [isDragOverAudio, setIsDragOverAudio] = useState(false);
 
   const audioEngineRef = useRef<ParticleAudioEngine | null>(null);
   if (!audioEngineRef.current) {
     audioEngineRef.current = new ParticleAudioEngine();
+  }
+
+  const videoRecorderRef = useRef<CanvasVideoRecorder | null>(null);
+  if (!videoRecorderRef.current) {
+    videoRecorderRef.current = new CanvasVideoRecorder();
   }
 
   const [audioStatus, setAudioStatus] = useState<AudioStatusSnapshot>({
@@ -41,6 +58,8 @@ export default function App() {
 
   const canvasRef = useRef<ParticleCanvasHandle | null>(null);
   const snapshotTimerRef = useRef<number | null>(null);
+  const videoSavedTimerRef = useRef<number | null>(null);
+  const recordingStartRef = useRef<number>(0);
 
   const palette = getPaletteById(params.paletteId);
   const activeFlowOption =
@@ -49,13 +68,27 @@ export default function App() {
     INTERACTION_MODE_OPTIONS.find((m) => m.id === params.interactionMode) ??
     INTERACTION_MODE_OPTIONS[0];
 
-  // Clean up audio engine on unmount
+  // Clean up audio engine & active video recorder on unmount
   useEffect(() => {
     const engine = audioEngineRef.current;
+    const recorder = videoRecorderRef.current;
     return () => {
+      recorder?.cancel();
       engine?.dispose();
+      if (videoSavedTimerRef.current) {
+        window.clearTimeout(videoSavedTimerRef.current);
+      }
     };
   }, []);
+
+  // Update elapsed recording duration cleanly at 4Hz while recording
+  useEffect(() => {
+    if (!isRecording) return;
+    const id = window.setInterval(() => {
+      setRecordingDurationMs(Math.max(0, performance.now() - recordingStartRef.current));
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [isRecording]);
 
   // Poll playback progress at 4Hz only while music is playing
   useEffect(() => {
@@ -180,6 +213,63 @@ export default function App() {
     }, 1800);
   }, [params.flowMode]);
 
+  const handleToggleRecording = useCallback(async () => {
+    const recorder = videoRecorderRef.current;
+    const engine = audioEngineRef.current;
+    if (!recorder || !engine) return;
+
+    setRecordingError(null);
+
+    if (recorder.isRecording) {
+      try {
+        const result = await recorder.stop();
+        setIsRecording(false);
+        setRecordingDurationMs(0);
+        setLastRecordingMeta({ bytes: result.sizeBytes, hasAudio: result.hasAudio });
+
+        const url = URL.createObjectURL(result.blob);
+        const link = document.createElement('a');
+        link.download = buildRecordingFilename(params.flowMode, result.fileExt);
+        link.href = url;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+
+        setVideoSaved(true);
+        if (videoSavedTimerRef.current) {
+          window.clearTimeout(videoSavedTimerRef.current);
+        }
+        videoSavedTimerRef.current = window.setTimeout(() => {
+          setVideoSaved(false);
+        }, 2000);
+      } catch (err) {
+        setIsRecording(false);
+        setRecordingDurationMs(0);
+        setRecordingError(err instanceof Error ? err.message : '导出视频失败，请重试');
+      }
+      return;
+    }
+
+    const canvas = canvasRef.current?.getCanvasElement();
+    if (!canvas) {
+      setRecordingError('画布尚未就绪，请稍后再试');
+      return;
+    }
+
+    try {
+      // Grab the persistent Web Audio MediaStream so local music or demo rhythm is recorded in sync
+      const audioStream = engine.getRecordingAudioStream();
+      recorder.start(canvas, audioStream, 60);
+      recordingStartRef.current = performance.now();
+      setRecordingDurationMs(0);
+      setIsRecording(true);
+    } catch (err) {
+      setIsRecording(false);
+      setRecordingError(err instanceof Error ? err.message : '无法启动视频录制');
+    }
+  }, [params.flowMode]);
+
   // Drag & drop local audio file anywhere on the viewport
   const handleDragOver = useCallback((e: DragEvent<HTMLElement>) => {
     e.preventDefault();
@@ -251,6 +341,9 @@ export default function App() {
       data-music-open={String(musicOpen)}
       data-music-playing={String(audioStatus.isPlaying)}
       data-music-source={audioStatus.sourceMode}
+      data-recording={String(isRecording)}
+      data-last-recording-bytes={String(lastRecordingMeta.bytes)}
+      data-last-recording-audio={String(lastRecordingMeta.hasAudio)}
       data-pulse-count={String(pulseCount)}
       style={{ backgroundColor: palette.backgroundHex }}
     >
@@ -292,6 +385,13 @@ export default function App() {
         onResetCamera={handleResetCamera}
         onCaptureSnapshot={handleCaptureSnapshot}
         snapshotSaved={snapshotSaved}
+        isRecording={isRecording}
+        recordingDurationMs={recordingDurationMs}
+        videoSaved={videoSaved}
+        recordingError={recordingError}
+        onToggleRecording={() => {
+          void handleToggleRecording();
+        }}
       />
 
       {/* Collapsible Unified Bottom Control Dock */}

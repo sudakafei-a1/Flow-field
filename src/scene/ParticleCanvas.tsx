@@ -23,6 +23,7 @@ export interface ParticleCanvasHandle {
   triggerCenterPulse: () => void;
   resetCamera: () => void;
   captureSnapshot: () => string | null;
+  getCanvasElement: () => HTMLCanvasElement | null;
 }
 
 interface ParticleCanvasProps {
@@ -82,6 +83,7 @@ export const ParticleCanvas = forwardRef<ParticleCanvasHandle, ParticleCanvasPro
     const triggerPulseFnRef = useRef<(() => void) | null>(null);
     const resetCameraFnRef = useRef<(() => void) | null>(null);
     const captureFnRef = useRef<(() => string | null) | null>(null);
+    const canvasElRef = useRef<HTMLCanvasElement | null>(null);
 
     paramsRef.current = params;
     audioEngineRef.current = audioEngine;
@@ -92,6 +94,7 @@ export const ParticleCanvas = forwardRef<ParticleCanvasHandle, ParticleCanvasPro
       triggerCenterPulse: () => triggerPulseFnRef.current?.(),
       resetCamera: () => resetCameraFnRef.current?.(),
       captureSnapshot: () => captureFnRef.current?.() ?? null,
+      getCanvasElement: () => canvasElRef.current,
     }));
 
     useEffect(() => {
@@ -132,6 +135,7 @@ export const ParticleCanvas = forwardRef<ParticleCanvasHandle, ParticleCanvasPro
       canvas.setAttribute('data-testid', 'particle-canvas');
       canvas.setAttribute('aria-label', '交互式三维悬浮粒子流场画布，移动鼠标搅动粒子，点击释放脉冲波');
       container.appendChild(canvas);
+      canvasElRef.current = canvas;
 
       // Scene & Camera
       const initialPalette = getPaletteById(paramsRef.current.paletteId);
@@ -791,6 +795,7 @@ export const ParticleCanvas = forwardRef<ParticleCanvasHandle, ParticleCanvasPro
           (ring.material as THREE.Material).dispose();
         }
         renderer.dispose();
+        canvasElRef.current = null;
         if (canvas.parentElement === container) {
           container.removeChild(canvas);
         }

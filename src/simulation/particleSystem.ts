@@ -5,6 +5,9 @@ import {
 } from './flowField';
 import {
   buildHeartPlanetAnchors,
+  computeHeartBobY,
+  computeHeartOuterRadius,
+  HEART_CENTER_Y,
   sampleHeartPlanetTarget,
   WATER_PLANE_Y,
 } from './heartPlanet';
@@ -234,6 +237,10 @@ export class ParticleSimulation {
     const turbulence = params.turbulence * (1 + midBoost * 0.45);
     const radius = params.interactionRadius;
     const time = this.time;
+    const heartCenterY =
+      mode === 'heartPlanet' ? HEART_CENTER_Y + computeHeartBobY(time, audio) : HEART_CENTER_Y;
+    const ringMinShellRadius =
+      mode === 'heartPlanet' ? computeHeartOuterRadius(time, turbulence, audio) + 0.42 : 0;
 
     for (let i = 0; i < activeCount; i++) {
       const i3 = i * 3;
@@ -261,7 +268,7 @@ export class ParticleSimulation {
           flow,
         );
         // Spring-like steering toward moving heart / ring / water-ripple target
-        const stiffness = heartRoles[i] === 1 ? 5.8 : 4.8;
+        const stiffness = heartRoles[i] === 2 ? 6.4 : heartRoles[i] === 1 ? 5.8 : 4.8;
         flow.x = (flow.x - px) * stiffness;
         flow.y = (flow.y - py) * stiffness;
         flow.z = (flow.z - pz) * stiffness;
@@ -362,6 +369,36 @@ export class ParticleSimulation {
         if (pz > 8.5) pz = -8.2;
         else if (pz < -8.5) pz = 8.2;
       } else {
+        // Keep orbital gravity ring particles strictly outside the pulsing heart shell
+        if (heartRoles[i] === 2) {
+          const rx = px;
+          const ry = py - heartCenterY;
+          const rz = pz;
+          const dist = Math.hypot(rx, ry, rz);
+          if (dist < ringMinShellRadius) {
+            let nx: number;
+            let ny: number;
+            let nz: number;
+            if (dist > 1e-4) {
+              nx = rx / dist;
+              ny = ry / dist;
+              nz = rz / dist;
+            } else {
+              nx = 1;
+              ny = 0;
+              nz = 0;
+            }
+            px = nx * ringMinShellRadius;
+            py = heartCenterY + ny * ringMinShellRadius;
+            pz = nz * ringMinShellRadius;
+            const inwardRadialSpeed = vx * nx + vy * ny + vz * nz;
+            if (inwardRadialSpeed < 0) {
+              vx -= nx * inwardRadialSpeed;
+              vy -= ny * inwardRadialSpeed;
+              vz -= nz * inwardRadialSpeed;
+            }
+          }
+        }
         // Gentle bounding clamp for heartPlanet so extreme clicks smoothly spring back
         px = Math.max(-13.5, Math.min(13.5, px));
         py = Math.max(-6.5, Math.min(7.5, py));

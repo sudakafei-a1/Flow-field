@@ -26,6 +26,8 @@ export class ParticleAudioEngine {
   private ctx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private masterGain: GainNode | null = null;
+  private recordDest: MediaStreamAudioDestinationNode | null = null;
+  private silentKeepAlive: ConstantSourceNode | null = null;
   private audioEl: HTMLAudioElement | null = null;
   private mediaSource: MediaElementAudioSourceNode | null = null;
   private objectUrl: string | null = null;
@@ -62,6 +64,24 @@ export class ParticleAudioEngine {
       this.masterGain.gain.value = 0.85;
       this.masterGain.connect(this.analyser);
       this.analyser.connect(this.ctx.destination);
+
+      // Dedicated MediaStream destination so MediaRecorder captures both local music & demo beat
+      if (typeof this.ctx.createMediaStreamDestination === 'function') {
+        this.recordDest = this.ctx.createMediaStreamDestination();
+        this.analyser.connect(this.recordDest);
+
+        // Zero-amplitude silent clock keeps the audio stream ticking smoothly even during pauses
+        if (typeof this.ctx.createConstantSource === 'function') {
+          const keepAlive = this.ctx.createConstantSource();
+          keepAlive.offset.value = 0;
+          const zeroGain = this.ctx.createGain();
+          zeroGain.gain.value = 0;
+          keepAlive.connect(zeroGain);
+          zeroGain.connect(this.recordDest);
+          keepAlive.start();
+          this.silentKeepAlive = keepAlive;
+        }
+      }
 
       this.freqBins = new Uint8Array(new ArrayBuffer(this.analyser.frequencyBinCount));
     }
@@ -282,6 +302,15 @@ export class ParticleAudioEngine {
   }
 
   /**
+   * Returns a live MediaStream containing all audio routed through this engine
+   * (imported local music and/or built-in rhythm beat) for synchronized video recording.
+   */
+  getRecordingAudioStream(): MediaStream | null {
+    this.ensureContext();
+    return this.recordDest?.stream ?? null;
+  }
+
+  /**
    * Samples real-time audio spectrum into `out` once per animation frame.
    */
   sample(dt: number, sensitivity: number, out: AudioReactiveState): void {
@@ -379,6 +408,15 @@ export class ParticleAudioEngine {
       URL.revokeObjectURL(this.objectUrl);
       this.objectUrl = null;
     }
+    if (this.silentKeepAlive) {
+      try {
+        this.silentKeepAlive.stop();
+      } catch {
+        // Ignore already-stopped node
+      }
+      this.silentKeepAlive = null;
+    }
+    this.recordDest = null;
     if (this.ctx) {
       void this.ctx.close().catch(() => {});
       this.ctx = null;

@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildHeartPlanetAnchors,
+  computeHeartBobY,
+  computeHeartOuterRadius,
   evaluateHeartSurfacePoint,
   HEART_CENTER_Y,
   sampleHeartPlanetTarget,
@@ -135,5 +137,46 @@ test('ParticleSimulation stays stable in heartPlanet mode with music beats', () 
   assert.ok(sim.pulses.length >= 1, 'strong music beat should spawn concentric water pulse');
   for (let i = 0; i < 400 * 3; i++) {
     assert.equal(Number.isFinite(sim.positions[i]), true);
+  }
+});
+
+test('orbital gravity ring stays strictly outside heart during music expansion and contraction', () => {
+  const sim = new ParticleSimulation(600, 777);
+  const params = { ...DEFAULT_SIMULATION_PARAMS, flowMode: 'heartPlanet' as const, particleCount: 600 };
+  const idlePointer = { active: false, pressed: false, x: 0, y: 0, z: 0, vx: 0, vy: 0 };
+
+  // Alternate between intense beat peaks and sharp contractions at high sensitivity
+  for (let stepIdx = 0; stepIdx < 80; stepIdx++) {
+    const phase = stepIdx % 20;
+    const isPeak = phase < 7;
+    const audio: AudioReactiveState = {
+      active: true,
+      bass: isPeak ? 0.95 : 0.12,
+      mid: isPeak ? 0.85 : 0.2,
+      treble: isPeak ? 0.8 : 0.15,
+      level: isPeak ? 0.9 : 0.18,
+      beat: isPeak ? 0.98 : 0.02,
+      sensitivity: 2.0,
+    };
+
+    sim.step(0.03, params, idlePointer, audio);
+
+    const effectiveTurbulence = params.turbulence * (1 + audio.mid * audio.sensitivity * 0.45);
+    const heartCenterY = HEART_CENTER_Y + computeHeartBobY(sim.time, audio);
+    const heartOuterRadius = computeHeartOuterRadius(sim.time, effectiveTurbulence, audio);
+
+    for (let i = 0; i < 600; i++) {
+      if (sim.heartRoles[i] !== 2) continue;
+      const i3 = i * 3;
+      const dist = Math.hypot(
+        sim.positions[i3],
+        sim.positions[i3 + 1] - heartCenterY,
+        sim.positions[i3 + 2],
+      );
+      assert.ok(
+        dist > heartOuterRadius + 0.35,
+        `ring particle ${i} at step ${stepIdx} dipped too close to heart: dist=${dist.toFixed(3)}, heartOuter=${heartOuterRadius.toFixed(3)}`,
+      );
+    }
   }
 });

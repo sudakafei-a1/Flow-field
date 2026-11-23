@@ -4,6 +4,42 @@ export type HeartPlanetRole = 'water' | 'heart' | 'ring';
 
 export const WATER_PLANE_Y = -3.05;
 export const HEART_CENTER_Y = 1.2;
+/** Exact upper bound of the base Taubin heart surface radius (lobes at ~45 deg, shellJitter = 1). */
+export const HEART_BASE_OUTER_RADIUS = 2.92;
+/** Base inner radius of the tilted orbital ring circling the heart planet. */
+export const RING_INNER_BASE = 3.45;
+/** Minimum radial clearance maintained between the heart outer shell and the orbital ring. */
+export const RING_MIN_CLEARANCE = 0.55;
+
+/**
+ * Computes the instantaneous vertical bob offset shared by the floating heart
+ * and its surrounding orbital ring so they stay coaxially aligned on beats.
+ */
+export function computeHeartBobY(time: number, audio: AudioReactiveState): number {
+  const beat = audio.active ? audio.beat * audio.sensitivity : 0;
+  return Math.sin(time * 1.15) * 0.2 + beat * 0.24;
+}
+
+/**
+ * Computes the instantaneous outer bounding radius of the pulsing 3D heart planet
+ * given time, turbulence, and active music reactivity.
+ */
+export function computeHeartOuterRadius(
+  time: number,
+  turbulence: number,
+  audio: AudioReactiveState,
+): number {
+  const sens = audio.sensitivity;
+  const bass = audio.active ? audio.bass * sens : 0;
+  const mid = audio.active ? audio.mid * sens : 0;
+  const treble = audio.active ? audio.treble * sens : 0;
+  const beat = audio.active ? audio.beat * sens : 0;
+
+  const idlePulse = 1.0 + Math.sin(time * 2.35) * 0.035 + Math.sin(time * 4.7) * 0.015;
+  const musicPulse = 1.0 + bass * 0.22 + beat * 0.2;
+  const surfaceWaveMax = 1.0 + 0.016 * turbulence + mid * 0.045 + treble * 0.035;
+  return HEART_BASE_OUTER_RADIUS * idlePulse * musicPulse * surfaceWaveMax;
+}
 
 /**
  * Implicit Taubin 3D algebraic heart function:
@@ -126,9 +162,9 @@ export function buildHeartPlanetAnchors(
       anchorC[i] = tmp.z;
       waterDepth[i] = 0;
     } else {
-      // Tilted planetary halo ring (2/20 = 10%)
+      // Tilted planetary halo ring (2/20 = 10%) positioned strictly outside the heart
       roles[i] = 2;
-      const ringRadius = 3.15 + rand() * 1.2;
+      const ringRadius = RING_INNER_BASE + rand() * 1.15;
       const angle = rand() * Math.PI * 2;
       const thickness = (rand() - 0.5) * 0.24;
       anchorA[i] = ringRadius;
@@ -230,7 +266,7 @@ export function sampleHeartPlanetTarget(
     const rz = (-lx * sinY + lz * cosY) * surfaceWave;
     const ry = ly * surfaceWave;
 
-    const bobY = Math.sin(time * 1.15) * 0.2 + beat * 0.24;
+    const bobY = computeHeartBobY(time, audio);
 
     out.x = rx;
     out.y = HEART_CENTER_Y + ry + bobY;
@@ -240,8 +276,13 @@ export function sampleHeartPlanetTarget(
     return Math.min(0.85, 0.22 + bass * 0.42 + beat * 0.32);
   }
 
-  // roleCode === 2: Tilted planetary orbital ring circling the floating heart
-  const ringR = a * (1.0 + bass * 0.14 + beat * 0.1);
+  // roleCode === 2: Tilted planetary orbital ring circling strictly outside the floating heart
+  const idlePulse = 1.0 + Math.sin(time * 2.35) * 0.035 + Math.sin(time * 4.7) * 0.015;
+  const heartOuterRadius = computeHeartOuterRadius(time, turbulence, audio);
+  const bandOffset = Math.max(0, a - RING_INNER_BASE);
+  const ringScale = idlePulse * (1.0 + bass * 0.25 + beat * 0.24);
+  const ringR = Math.max(heartOuterRadius + RING_MIN_CLEARANCE + bandOffset, a * ringScale);
+
   const orbitAngle = b + time * (0.55 + mid * 0.45);
   const px = Math.cos(orbitAngle) * ringR;
   const pz = Math.sin(orbitAngle) * ringR;
@@ -259,7 +300,7 @@ export function sampleHeartPlanetTarget(
   const x2 = px * cosZ - y1 * sinZ;
   const y2 = px * sinZ + y1 * cosZ;
 
-  const bobY = Math.sin(time * 1.15) * 0.2 + beat * 0.18;
+  const bobY = computeHeartBobY(time, audio);
 
   out.x = x2;
   out.y = HEART_CENTER_Y + y2 + bobY;

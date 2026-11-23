@@ -1,0 +1,6 @@
+{
+  "name": "流光粒子 · 交互式悬浮粒子流场",
+  "description": "实时 3D 悬浮粒子流体特效实验室，支持多流场形态切换、鼠标引力/排斥/旋涡交互、点击脉冲波与实时参数调控。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

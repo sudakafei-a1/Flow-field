@@ -1,0 +1,75 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    font-family: 'Plus Jakarta Sans', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+}
+
+.font-mono-tabular {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom sleek range slider for parameter controls */
+input[type='range'].particle-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+input[type='range'].particle-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: transparent;
+}
+
+input[type='range'].particle-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  margin-top: -5px;
+  background-color: var(--slider-accent, #F5C77E);
+  border: 2px solid var(--slider-thumb-ring, #0B101D);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+input[type='range'].particle-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: transparent;
+}
+
+input[type='range'].particle-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background-color: var(--slider-accent, #F5C77E);
+  border: 2px solid var(--slider-thumb-ring, #0B101D);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+input[type='range'].particle-slider:hover::-webkit-slider-thumb {
+  transform: scale(1.16);
+}
+
+input[type='range'].particle-slider:focus-visible {
+  outline: none;
+}
+
+input[type='range'].particle-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px rgba(245, 199, 126, 0.45);
+}
